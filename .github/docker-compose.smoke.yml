@@ -1,0 +1,23 @@
+services:
+  db:
+    image: mariadb:10.11
+    environment:
+      MARIADB_ROOT_PASSWORD: dev-root-only-do-not-deploy
+      MARIADB_DATABASE: agendav
+      MARIADB_USER: agendav
+      MARIADB_PASSWORD: agendav
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  web:
+    image: agendav-smoke:local
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./.github/smoke/settings.php:/app/config/settings.php:ro
+    ports:
+      - "18080:80"

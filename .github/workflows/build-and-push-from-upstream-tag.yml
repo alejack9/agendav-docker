@@ -45,9 +45,11 @@ jobs:
 
           OWNER_LC="$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')"
           IMAGE="ghcr.io/${OWNER_LC}/agendav"
+          SOURCE_TAG_URL="https://github.com/agendav/agendav/releases/tag/${TAG}"
 
           echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
           echo "image=${IMAGE}" >> "$GITHUB_OUTPUT"
+          echo "source_tag_url=${SOURCE_TAG_URL}" >> "$GITHUB_OUTPUT"
           echo "Resolved tag: ${TAG}"
           echo "Target image: ${IMAGE}"
 
@@ -93,6 +95,37 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Build local image for smoke test
+        if: steps.exists.outputs.exists != 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: ./source
+          file: ./source/Dockerfile
+          load: true
+          tags: agendav-smoke:local
+
+      - name: Smoke test image startup
+        if: steps.exists.outputs.exists != 'true'
+        run: |
+          set -euo pipefail
+
+          docker compose -f .github/docker-compose.smoke.yml up -d
+
+          for i in {1..12}; do
+            HTTP_CODE="$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:18080/ || true)"
+            if [[ "${HTTP_CODE}" != "000" ]]; then
+              echo "Smoke test passed: container is serving HTTP (status ${HTTP_CODE})"
+              docker compose -f .github/docker-compose.smoke.yml down -v
+              exit 0
+            fi
+            sleep 5
+          done
+
+          echo "Smoke test failed: web did not become ready in time"
+          docker compose -f .github/docker-compose.smoke.yml logs || true
+          docker compose -f .github/docker-compose.smoke.yml down -v || true
+          exit 1
+
       - name: Build and push image
         if: steps.exists.outputs.exists != 'true'
         uses: docker/build-push-action@v6
@@ -102,3 +135,10 @@ jobs:
           push: true
           tags: |
             ${{ steps.resolve.outputs.image }}:${{ steps.resolve.outputs.tag }}
+            ${{ steps.resolve.outputs.image }}:latest
+          labels: |
+            org.opencontainers.image.source=https://github.com/agendav/agendav
+            org.opencontainers.image.url=https://github.com/agendav/agendav
+            org.opencontainers.image.version=${{ steps.resolve.outputs.tag }}
+            org.opencontainers.image.documentation=${{ steps.resolve.outputs.source_tag_url }}
+            org.opencontainers.image.ref.name=${{ steps.resolve.outputs.tag }}
