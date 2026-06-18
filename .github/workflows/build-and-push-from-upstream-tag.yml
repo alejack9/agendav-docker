@@ -108,6 +108,7 @@ jobs:
           tags: agendav-smoke:local
 
       - name: Smoke test image startup
+        id: smoke
         if: steps.exists.outputs.exists != 'true'
         run: |
           set -euo pipefail
@@ -118,16 +119,21 @@ jobs:
             HTTP_CODE="$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:18080/ || true)"
             if [[ "${HTTP_CODE}" != "000" ]]; then
               echo "Smoke test passed: container is serving HTTP (status ${HTTP_CODE})"
-              docker compose -f .github/docker-compose.smoke.yml down -v
               exit 0
             fi
             sleep 5
           done
 
           echo "Smoke test failed: web did not become ready in time"
-          docker compose -f .github/docker-compose.smoke.yml logs || true
-          docker compose -f .github/docker-compose.smoke.yml down -v || true
           exit 1
+
+      - name: Dump smoke test logs
+        if: steps.smoke.conclusion != 'skipped'
+        run: docker compose -f .github/docker-compose.smoke.yml logs --no-color
+
+      - name: Tear down smoke test stack
+        if: steps.smoke.conclusion != 'skipped'
+        run: docker compose -f .github/docker-compose.smoke.yml down -v
 
       - name: Build and push image
         if: steps.exists.outputs.exists != 'true'
