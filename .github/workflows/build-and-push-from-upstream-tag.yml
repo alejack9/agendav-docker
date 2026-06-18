@@ -103,7 +103,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: ./source
-          file: ./source/Dockerfile
+          file: ./Dockerfile
           load: true
           tags: agendav-smoke:local
 
@@ -134,7 +134,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: ./source
-          file: ./source/Dockerfile
+          file: ./Dockerfile
           push: true
           tags: |
             ${{ steps.resolve.outputs.image }}:${{ steps.resolve.outputs.tag }}
