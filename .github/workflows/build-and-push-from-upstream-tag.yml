@@ -1,0 +1,104 @@
+name: Build and Push from agendav/agendav Tag
+
+on:
+  schedule:
+    - cron: "*/30 * * * *"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Upstream agendav/agendav tag to build (optional)"
+        required: false
+        type: string
+  repository_dispatch:
+    types:
+      - agendav-new-tag
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Resolve target tag
+        id: resolve
+        env:
+          INPUT_TAG: ${{ github.event.inputs.tag }}
+          PAYLOAD_TAG: ${{ github.event.client_payload.tag }}
+        run: |
+          set -euo pipefail
+
+          if [[ -n "${INPUT_TAG:-}" ]]; then
+            TAG="${INPUT_TAG}"
+          elif [[ -n "${PAYLOAD_TAG:-}" ]]; then
+            TAG="${PAYLOAD_TAG}"
+          else
+            TAG="$(git ls-remote --tags --refs https://github.com/agendav/agendav.git | awk -F'/' '{print $3}' | sort -V | tail -n1)"
+          fi
+
+          if [[ -z "${TAG}" ]]; then
+            echo "No tag could be resolved from agendav/agendav."
+            exit 1
+          fi
+
+          OWNER_LC="$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')"
+          IMAGE="ghcr.io/${OWNER_LC}/agendav"
+
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "image=${IMAGE}" >> "$GITHUB_OUTPUT"
+          echo "Resolved tag: ${TAG}"
+          echo "Target image: ${IMAGE}"
+
+      - name: Check if image tag already exists in GHCR
+        id: exists
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          IMAGE: ${{ steps.resolve.outputs.image }}
+          TAG: ${{ steps.resolve.outputs.tag }}
+        run: |
+          set -euo pipefail
+
+          MANIFEST_URL="https://ghcr.io/v2/${IMAGE#ghcr.io/}/manifests/${TAG}"
+
+          if curl -fsSI \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Accept: application/vnd.oci.image.manifest.v1+json" \
+            "${MANIFEST_URL}" >/dev/null; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "Image ${IMAGE}:${TAG} already exists. Skipping build."
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "Image ${IMAGE}:${TAG} not found. Build will run."
+          fi
+
+      - name: Checkout agendav/agendav at tag
+        if: steps.exists.outputs.exists != 'true'
+        uses: actions/checkout@v4
+        with:
+          repository: agendav/agendav
+          ref: refs/tags/${{ steps.resolve.outputs.tag }}
+          path: source
+
+      - name: Set up Docker Buildx
+        if: steps.exists.outputs.exists != 'true'
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        if: steps.exists.outputs.exists != 'true'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push image
+        if: steps.exists.outputs.exists != 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: ./source
+          file: ./source/Dockerfile
+          push: true
+          tags: |
+            ${{ steps.resolve.outputs.image }}:${{ steps.resolve.outputs.tag }}
