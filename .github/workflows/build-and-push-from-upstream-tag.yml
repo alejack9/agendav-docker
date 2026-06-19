@@ -65,10 +65,16 @@ jobs:
         run: |
           set -euo pipefail
 
-          MANIFEST_URL="https://ghcr.io/v2/${IMAGE#ghcr.io/}/manifests/${TAG}"
+          REPO="${IMAGE#ghcr.io/}"
+          GHCR_TOKEN=$(curl -fsSL \
+            -u ":${GH_TOKEN}" \
+            "https://ghcr.io/token?service=ghcr.io&scope=repository:${REPO}:pull" \
+            | jq -r .token)
+
+          MANIFEST_URL="https://ghcr.io/v2/${REPO}/manifests/${TAG}"
 
           if curl -fsSI \
-            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Authorization: Bearer ${GHCR_TOKEN}" \
             -H "Accept: application/vnd.oci.image.manifest.v1+json" \
             "${MANIFEST_URL}" >/dev/null; then
             echo "exists=true" >> "$GITHUB_OUTPUT"
