@@ -18,6 +18,6 @@ services:
       db:
         condition: service_healthy
     volumes:
-      - ./.github/smoke/settings.php:/app/config/settings.php:ro
+      - ./smoke/settings.php:/app/config/settings.php:ro
     ports:
       - "18080:80"
