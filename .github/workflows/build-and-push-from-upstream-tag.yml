@@ -66,22 +66,22 @@ jobs:
           set -euo pipefail
 
           REPO="${IMAGE#ghcr.io/}"
-          GHCR_TOKEN=$(curl -fsSL \
+          GHCR_TOKEN=$(curl -sSL \
             -u ":${GH_TOKEN}" \
             "https://ghcr.io/token?service=ghcr.io&scope=repository:${REPO}:pull" \
-            | jq -r .token)
+            | jq -r '.token // .access_token // ""')
 
-          MANIFEST_URL="https://ghcr.io/v2/${REPO}/manifests/${TAG}"
-
-          if curl -fsSI \
+          HTTP_CODE=$(curl -sSI -o /dev/null -w "%{http_code}" \
             -H "Authorization: Bearer ${GHCR_TOKEN}" \
             -H "Accept: application/vnd.oci.image.manifest.v1+json" \
-            "${MANIFEST_URL}" >/dev/null; then
+            "https://ghcr.io/v2/${REPO}/manifests/${TAG}")
+
+          if [[ "${HTTP_CODE}" == "200" ]]; then
             echo "exists=true" >> "$GITHUB_OUTPUT"
             echo "Image ${IMAGE}:${TAG} already exists. Skipping build."
           else
             echo "exists=false" >> "$GITHUB_OUTPUT"
-            echo "Image ${IMAGE}:${TAG} not found. Build will run."
+            echo "Image ${IMAGE}:${TAG} not found (HTTP ${HTTP_CODE}). Build will run."
           fi
 
       - name: Checkout agendav/agendav at tag
