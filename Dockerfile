@@ -28,7 +28,7 @@ RUN composer install --no-dev --prefer-dist --no-interaction --no-progress \
 # Final image is ~200-300 MB instead of ~900 MB.
 FROM php:8.5-fpm-alpine AS runtime
 
-RUN apk add --no-cache nginx icu-data-full \
+RUN apk add --no-cache nginx icu-data-full icu-libs libzip \
     && apk add --no-cache --virtual .build-deps libzip-dev icu-dev \
     && docker-php-ext-install -j"$(nproc)" pdo_mysql intl zip \
     && apk del .build-deps \
