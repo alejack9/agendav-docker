@@ -56,32 +56,27 @@ jobs:
           echo "Resolved tag: ${TAG}"
           echo "Target image: ${IMAGE}"
 
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Check if image tag already exists in GHCR
         id: exists
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           IMAGE: ${{ steps.resolve.outputs.image }}
           TAG: ${{ steps.resolve.outputs.tag }}
         run: |
           set -euo pipefail
 
-          REPO="${IMAGE#ghcr.io/}"
-          GHCR_TOKEN=$(curl -sSL \
-            -u ":${GH_TOKEN}" \
-            "https://ghcr.io/token?service=ghcr.io&scope=repository:${REPO}:pull" \
-            | jq -r '.token // .access_token // ""')
-
-          HTTP_CODE=$(curl -sSI -o /dev/null -w "%{http_code}" \
-            -H "Authorization: Bearer ${GHCR_TOKEN}" \
-            -H "Accept: application/vnd.oci.image.manifest.v1+json" \
-            "https://ghcr.io/v2/${REPO}/manifests/${TAG}")
-
-          if [[ "${HTTP_CODE}" == "200" ]]; then
+          if docker manifest inspect "${IMAGE}:${TAG}" > /dev/null 2>&1; then
             echo "exists=true" >> "$GITHUB_OUTPUT"
             echo "Image ${IMAGE}:${TAG} already exists. Skipping build."
           else
             echo "exists=false" >> "$GITHUB_OUTPUT"
-            echo "Image ${IMAGE}:${TAG} not found (HTTP ${HTTP_CODE}). Build will run."
+            echo "Image ${IMAGE}:${TAG} not found. Build will run."
           fi
 
       - name: Checkout agendav/agendav at tag
@@ -95,14 +90,6 @@ jobs:
       - name: Set up Docker Buildx
         if: steps.exists.outputs.exists != 'true'
         uses: docker/setup-buildx-action@v3
-
-      - name: Log in to GHCR
-        if: steps.exists.outputs.exists != 'true'
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build local image for smoke test
         if: steps.exists.outputs.exists != 'true'
